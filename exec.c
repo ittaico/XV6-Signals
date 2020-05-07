@@ -93,6 +93,14 @@ exec(char *path, char **argv)
       last = s+1;
   safestrcpy(curproc->name, last, sizeof(curproc->name));
 
+///***Task 2.1.1***
+  for (i = 0; i < 32; i++){
+    void* handler = curproc->sig_hand[i];
+    if (handler != (void*) SIG_IGN){
+      handler = (void*) SIG_DFL;
+    }
+  }
+
   // Commit to the user image.
   oldpgdir = curproc->pgdir;
   curproc->pgdir = pgdir;

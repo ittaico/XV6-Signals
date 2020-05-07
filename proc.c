@@ -88,6 +88,7 @@ allocproc(void)
 {
   struct proc *p;
   char *sp;
+  int i;
 
   acquire(&ptable.lock);
 
@@ -100,6 +101,7 @@ allocproc(void)
 
 found:
   p->state = EMBRYO;
+  
   release(&ptable.lock);
 
   p->pid = allocpid();
@@ -124,6 +126,13 @@ found:
   p->context = (struct context*)sp;
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
+
+  ///***Task 2.1.1***
+  p->pend_sig = 0;      
+  p->sig_mask = 0;
+  for (i = 0; i < 32; i++){
+    p->sig_hand[i] = (void *) SIG_DFL;
+  }
 
   return p;
 }
@@ -227,6 +236,13 @@ fork(void)
   safestrcpy(np->name, curproc->name, sizeof(curproc->name));
 
   pid = np->pid;
+
+  ///***Task 2.1.2***
+  np->sig_mask = curproc->sig_mask;
+  for (i = 0; i<32; i++){
+    np->sig_hand[i] = curproc->sig_hand[i];
+  } 
+
 
   acquire(&ptable.lock);
 
@@ -547,4 +563,15 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+//***2.1.3***
+uint sigprocmask(uint sigmask){
+  uint old_mask;
+  struct proc *curproc = myproc();
+
+  old_mask = curproc->sig_mask;
+  curproc->sig_mask = sigmask; //updating the process signal mask
+  return old_mask;
+
 }

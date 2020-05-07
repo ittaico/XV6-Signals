@@ -89,3 +89,18 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+//***2.1.3***
+//The system_call will update the process signal mask
+//and return the old signal mask.
+int
+sys_sigprocmask(void)
+{
+  uint sigmask;
+
+    if(argint(0,(*int) &sigmask) < 0)
+    return -1;
+
+    return sys_sigprocmask(sigmask);
+
+}
