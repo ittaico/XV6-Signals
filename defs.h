@@ -107,7 +107,7 @@ int             cpuid(void);
 void            exit(void);
 int             fork(void);
 int             growproc(int);
-int             kill(int);
+int             kill(int,int);
 struct cpu*     mycpu(void);
 struct proc*    myproc();
 void            pinit(void);
@@ -120,6 +120,13 @@ void            userinit(void);
 int             wait(void);
 void            wakeup(void*);
 void            yield(void);
+//**Task 2.1.3***
+uint 			sigprocmask(uint);
+//***Task 2.1.4***
+int 			sigaction(int,const struct sigaction*,struct sigaction*);
+//***Task 2.1.5***
+void			sigret(void);
+
 
 // swtch.S
 void            swtch(struct context**, struct context*);

@@ -508,9 +508,31 @@ wakeup(void *chan)
 // Kill the process with the given pid.
 // Process won't exit until it returns
 // to user space (see trap in trap.c).
+
+/*
+kill fails:
+-when there is no pid like the one provided.
+-when signum doens't exist
+-when trying to send a signal to a process that is not "RUNNABLE", "SLEEPING", "Embryo"
+*/
 int
-kill(int pid)
+kill(int pid, int signum)
 {
+struct proc *p;
+
+acquire(&ptable.lock);
+for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+  if(p->pid == pid){
+    if(p->state == SLEEPING || p->state == RUNNABLE || p->state == EMBRYO || p->state == RUNNING){
+      return 0;
+    }
+  }
+}
+return -1;
+
+
+  /* Old Kill */
+  /*
   struct proc *p;
 
   acquire(&ptable.lock);
@@ -526,6 +548,7 @@ kill(int pid)
   }
   release(&ptable.lock);
   return -1;
+  */
 }
 
 //PAGEBREAK: 36
@@ -566,7 +589,8 @@ procdump(void)
 }
 
 //***2.1.3***
-uint sigprocmask(uint sigmask){
+uint 
+sigprocmask(uint sigmask){
   uint old_mask;
   struct proc *curproc = myproc();
 
@@ -574,4 +598,31 @@ uint sigprocmask(uint sigmask){
   curproc->sig_mask = sigmask; //updating the process signal mask
   return old_mask;
 
+}
+
+// TODO/
+int 
+sigaction(int signum,const struct sigaction *act,struct sigaction *oldact){
+  struct proc *curproc = myproc();
+  //chack for the validity, the signum should be between 0-31 and the act can't be NULL
+  if(signum < 0 || signum > 31 || act == NULL || act->sigmask < 0){
+    return -1;
+  }
+  //Chack is the struct oldact isn't NULL, if not will get the current sigaction
+  if(oldact != NULL){
+    oldact->sa_handler = curproc->sig_hand[signum]; //need to check the defanition of the sa_handler on the struct
+    oldact->sigmask = curproc->sig_mask;
+  }
+    curproc->sig_hand[signum] = act->sa_handler;
+
+
+
+  return 0;
+}
+
+void
+sigret(void){
+    struct proc *curproc = myproc();
+
+    memmove(curproc->tf,curproc->tf_backup,sizeof(struct trapframe));
 }

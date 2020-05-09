@@ -67,3 +67,7 @@ struct proc {
 //   original data and bss
 //   fixed-size stack
 //   expandable heap
+
+
+//***2.1.4***
+//Define a new struct for sigaction
