@@ -134,7 +134,7 @@ sys_sigaction(void)
 //The system call will br called implicitly 
 //when returning from user space after handling a singal
 int
-sys_siret(void){
+sys_sigret(void){
   sigret();
   return 0;
 }
