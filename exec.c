@@ -93,11 +93,11 @@ exec(char *path, char **argv)
       last = s+1;
   safestrcpy(curproc->name, last, sizeof(curproc->name));
 
-///***Task 2.1.1***
+///***Task 2.1.2***
   for (i = 0; i < 32; i++){
-    void* handler = curproc->sig_hand[i];
-    if (handler != (void*) SIG_IGN){
-      handler = (void*) SIG_DFL;
+    if (curproc->handlers[i] != (void*) SIG_IGN){
+      curproc->handlers[i] =  SIG_DFL;
+      curproc->sig_masks[i] = 0;
     }
   }
 

@@ -57,9 +57,12 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
   uint pend_sig;               // Pending signals
-  uint sig_mask;               // Signals mask
-  void *sig_hand[32];          // Signal handlers
+  uint mask;                  // Signals mask
+  uint sig_masks[32];         // Signals mask array
+  void *handlers[32];          // Signal handlers
   struct trapframe *tf_backup; // User trap frame backup
+  int stoped;                  // Flag that indicates if the process is stoped
+  uint mask_backup             // Before hendling signal space signal backup field for the mask
 };
 
 // Process memory is laid out contiguously, low addresses first:

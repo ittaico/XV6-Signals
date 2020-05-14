@@ -127,11 +127,12 @@ found:
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
 
-  ///***Task 2.1.1***
+  ///***Task 2.1.2***
   p->pend_sig = 0;      
-  p->sig_mask = 0;
+  p->mask = 0;
   for (i = 0; i < 32; i++){
-    p->sig_hand[i] = (void *) SIG_DFL;
+    p->handlers[i] = (void *) SIG_DFL;
+    p->sig_masks[i] = 0;
   }
 
   return p;
@@ -238,9 +239,10 @@ fork(void)
   pid = np->pid;
 
   ///***Task 2.1.2***
-  np->sig_mask = curproc->sig_mask;
+  np->mask = curproc->mask;
   for (i = 0; i<32; i++){
-    np->sig_hand[i] = curproc->sig_hand[i];
+    np->handlers[i] = curproc->handlers[i];
+    np->sig_masks[i] = curproc->sig_masks[i];
   } 
 
 
@@ -523,7 +525,10 @@ struct proc *p;
 acquire(&ptable.lock);
 for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
   if(p->pid == pid){
-    if(p->state == SLEEPING || p->state == RUNNABLE || p->state == EMBRYO || p->state == RUNNING){
+    if(p->state != ZOMBIE && p->state != UNUSED && p->killed != 1){
+      if(signum >= 0 && signum <= 31){
+        p->pend_sig = p->pend_sig | (1<<signum);
+      }
       return 0;
     }
   }
@@ -594,8 +599,8 @@ sigprocmask(uint sigmask){
   uint old_mask;
   struct proc *curproc = myproc();
 
-  old_mask = curproc->sig_mask;
-  curproc->sig_mask = sigmask; //updating the process signal mask
+  old_mask = curproc->mask;
+  curproc->mask = sigmask; //updating the process signal mask
   return old_mask;
 
 }
@@ -605,15 +610,17 @@ int
 sigaction(int signum,const struct sigaction *act,struct sigaction *oldact){
   struct proc *curproc = myproc();
   //chack for the validity, the signum should be between 0-31 and the act can't be NULL
-  if(signum < 0 || signum > 31 || act == NULL || act->sigmask < 0){
+  if(signum < 0 || signum > 31 || act == NULL || act->sigmask < 0 || oldact == NULL){
     return -1;
   }
+  //Check if the new handler is one of the fowlling:SIG_IGN,SIGSTOP,SIGKILL,SIGCONT,SIG_DFL 
+  //or a pointer to a user space signal handler
+ // if(act->sa_handler == SIG_IGN || act->sa_handler == SIGSTOP || act->sa_handler == SIGKILL ||act->sa_handler == SIGCONT ||act->sa_handler == SIG_DFL)
   //Chack is the struct oldact isn't NULL, if not will get the current sigaction
-  if(oldact != NULL){
-    oldact->sa_handler = curproc->sig_hand[signum]; //need to check the defanition of the sa_handler on the struct
-    oldact->sigmask = curproc->sig_mask;
-  }
-    curproc->sig_hand[signum] = act->sa_handler;
+    oldact->sa_handler = curproc->handlers[signum]; //need to check the defanition of the sa_handler on the struct
+    oldact->sigmask = curproc->sig_masks[signum];   //Copy the sig_masks[signum] of the old handler the oldact
+    curproc->handlers[signum] = act->sa_handler;
+    curproc->sig_masks[signum] = act->sigmask;
 
 
 
@@ -622,7 +629,77 @@ sigaction(int signum,const struct sigaction *act,struct sigaction *oldact){
 
 void
 sigret(void){
-    struct proc *curproc = myproc();
+   // struct proc *curproc = myproc();
 
-    memmove(curproc->tf,curproc->tf_backup,sizeof(struct trapframe));
+  //  memmove(curproc->tf,curproc->tf_backup,sizeof(struct trapframe));
+}
+
+void
+signalChecker(void){
+  struct proc *p = myproc();
+  int pendingSignalCheckerBit,maskCheckerBit,i ;
+  struct sigaction* currentSigaction;
+  struct trapframe tp;
+  if(!p){  //process is not NULL
+    return;
+  }
+//************We need to acquire the ptable????????
+  for (i = 0; i < 32; i++){
+    pendingSignalCheckerBit = p->pend_sig & (1<<i); //Check if the bit in the i place at the pend_sig is 1
+    maskCheckerBit = p->mask & (1<<i);   // Check if the bit in the i place at the mask is 1
+    if(pendingSignalCheckerBit && (!maskCheckerBit ||  i == SIGKILL || i == SIGSTOP)){  //TODOC
+      if(i == SIGKILL){ // SIGKILL Handling
+        sigkillhandler:
+        p->killed = 1;
+        if(p->state == SLEEPING)
+          p->state = RUNNABLE;
+        continue;
+      }
+      if(i == SIGSTOP){// SIGSTOP Handling, will loop until thje 
+        sigstophandler:
+        p->stoped = 1;
+        while((p->pend_sig & (1<<SIGCONT)) > 0){
+          yield();
+        }
+        continue;
+      }
+      if(i == SIGCONT){
+        sigconthandler:
+        if(p->stoped == 1)
+          p->stoped = 0;
+        continue;
+      }
+      if(p->handler[i] == (void*) SIG_IGN){//The handler of the current signal is IGN so we need to IGN the current signal
+        continue;
+      }
+      //We can merge all the next ifs to the prev ifs only change the condition of every if.
+      // for our choice.
+      if(p->handlers[i] == (void*) SIG_DFL){//The handler of the current siganal is DFL so we need to kill the process
+        goto sigkillhandler;
+      }
+      if(p->handlers[i] == (void*) SIGSTOP){//The handler of the current signal is STOP so we need to STOP the signal 
+        goto sigstophandler;
+      }
+      if(p->handler[i] == (void*) SIGCONT){// THe handler of the current signal is CONT so we need to do cont process
+        goto sigconthandler;
+      }
+      //From here we handle the user space handler function
+      p->mask_backup = p->mask;
+      p->mask = p->sig_masks[i];
+      tp = p->tp;     // passing a pointer to the process trapframe
+      tf->esp -= sizeof(struct trapframe); //Save space to the trapframe
+      memmove((void*) (tp->esp), tp, sizeof(struct trapframe)); 
+      p->tf_backup = (void*) (tp->esp);
+
+      //COPY FROM HAVIA active the signl handler in the user space with "injection" return to sigret function after finishing
+
+      tp->esp -= ( &endsigret -  &startsigret); //Save a space at the stack to the sigret function
+      memmove((void*)tp->esp,startsigret,( &endsigret - &startsigret)) //By use the memmove function we can move the esp to the strat of the sigret function
+      tp->esp -= 4; // Save place to the argument (signum)
+      *((int *)(tp->esp)) = i; // pusing the argument (signum) to the steack
+      tp->esp -= 4; // Save place to the reteun address
+      *((int *)(tp->eip)) = p->handler[i]; // move the eip to handler[i] function to run the handler
+      return; // way return ? we dont need to countine the next signal to check ?    
+  } 
+  }
 }
