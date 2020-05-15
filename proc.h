@@ -1,9 +1,10 @@
-#define SIG_DFL 0 /* defualt signal handling */
-#define SIG_IGN 1 /* ignore signal */
+//***2.1.1***
+#define SIG_DFL 0 /* Defualt signal handling */
+#define SIG_IGN 1 /* Ignore signal */
 
-#define SIGKILL 9
-#define SIGSTOP 17
-#define SIGCONT 19
+#define SIGKILL 9 /* Kill Signal*/
+#define SIGSTOP 17 /* Stop Signal*/
+#define SIGCONT 19 /* Continue Signal*/
 
 // Per-CPU state
 struct cpu {
@@ -56,13 +57,16 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  //***2.1.1***
   uint pend_sig;               // Pending signals
-  uint mask;                  // Signals mask
-  uint sig_masks[32];         // Signals mask array
+  uint mask;                   // Signals mask
   void *handlers[32];          // Signal handlers
   struct trapframe *tf_backup; // User trap frame backup
-  int stoped;                  // Flag that indicates if the process is stoped
-  uint mask_backup             // Before hendling signal space signal backup field for the mask
+
+  uint sig_masks[32];          // Signals mask array
+  int stopped;                 // Flag that indicates if the process is stoped
+  uint mask_backup             // Before hendling signal space signal backup field for the mask. ??? Why do we need it ???
 };
 
 // Process memory is laid out contiguously, low addresses first:
@@ -70,7 +74,3 @@ struct proc {
 //   original data and bss
 //   fixed-size stack
 //   expandable heap
-
-
-//***2.1.4***
-//Define a new struct for sigaction
