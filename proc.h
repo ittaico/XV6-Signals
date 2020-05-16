@@ -66,7 +66,7 @@ struct proc {
 
   uint sig_masks[32];          // Signals mask array
   int stopped;                 // Flag that indicates if the process is stoped
-  uint mask_backup             // Before hendling signal space signal backup field for the mask. ??? Why do we need it ???
+  uint mask_backup;             // Before hendling signal space signal backup field for the mask. ??? Why do we need it ???
 };
 
 // Process memory is laid out contiguously, low addresses first:
