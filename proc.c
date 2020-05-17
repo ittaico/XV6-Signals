@@ -627,11 +627,18 @@ sigaction(int signum,const struct sigaction *act,struct sigaction *oldact){
   return 0;
 }
 
+//Return to the user space by restoring the trap frame backup we saved before running the user signal handler.
+// ??? Do we need to set a flag to know when we are going to user mode ???
 void
 sigret(void){
-   // struct proc *curproc = myproc();
+  struct proc *curproc = myproc();
 
-  //  memmove(curproc->tf,curproc->tf_backup,sizeof(struct trapframe));
+  //restore trap frame backup.
+  memmove(curproc->tf,curproc->tf_backup,sizeof(struct trapframe));
+  curproc->tf->esp += sizeof(struct trapframe);
+
+  //restore mask backup
+  curproc->mask = curproc->mask_backup;
 }
 
 void
@@ -639,15 +646,21 @@ signalChecker(void){
   struct proc *p = myproc();
   int pendingSignalCheckerBit,maskCheckerBit,i ;
   struct sigaction* currentSigaction;
-  struct trapframe tp;
+  struct trapframe* tp;
   if(!p){  //process is not NULL
     return;
   }
-//************We need to acquire the ptable????????    
+  /*
+  checking for the process's 32 possible pending signals and handaling them.
+  signal numbers are located in proc.h
+  ??? Do we need to acquire the ptable ???
+  */
   for (i = 0; i < 32; i++){
-    pendingSignalCheckerBit = p->pend_sig & (1<<i); //Check if the bit in the i place at the pend_sig is 1
-    maskCheckerBit = p->mask & (1<<i);   // Check if the bit in the i place at the mask is 1
-    if(pendingSignalCheckerBit && (!maskCheckerBit ||  i == SIGKILL || i == SIGSTOP)){  //TODOC
+    pendingSignalCheckerBit = p->pend_sig & (1<<i); //Check if the bit in position i of pend_sig is 1
+    //Q: when do we need to set the mask from the sig_masks.
+    maskCheckerBit = p->mask & (1<<i);   // Check if the bit in the i place at the mask is 1 
+
+    if (pendingSignalCheckerBit && (!maskCheckerBit ||  i == SIGKILL || i == SIGSTOP)){  //SIGSTOP and SIGKILL can not be blocked
       if(i == SIGKILL){ // SIGKILL Handling
         sigkillhandler:
         p->killed = 1;
@@ -655,51 +668,57 @@ signalChecker(void){
           p->state = RUNNABLE;
         continue;
       }
-      if(i == SIGSTOP){// SIGSTOP Handling, will loop until thje 
+
+      // SIGSTOP Handling, loop until the process recieved the SIGCONT signal.
+      if(i == SIGSTOP){
         sigstophandler:
-        p->stoped = 1;
-        while((p->pend_sig & (1<<SIGCONT)) == 0){  
+        p->stopped = 1;
+        while((p->pend_sig & (1<<SIGCONT)) == 0){
           yield();
         }
         continue;
       }
+
       if(i == SIGCONT){
         sigconthandler:
-        if(p->stoped == 1)
-          p->stoped = 0;
+        if(p->stopped == 1)
+          p->stopped = 0;
         continue;
       }
-      if(p->handler[i] == (void*) SIG_IGN){//The handler of the current signal is IGN so we need to IGN the current signal
+
+      if(p->handlers[i] == (void*) SIG_IGN){//The handler of the current signal is IGN so we need to IGN the current signal
         continue;
       }
       //We can merge all the next ifs to the prev ifs only change the condition of every if.
       // for our choice.
-      if(p->handlers[i] == (void*) SIG_DFL || p->handlers[i] == (void*) SIG_KILL){//The handler of the current siganal is DFL so we need to kill the process
+      //The handler of the current siganal is DFL or KILL so we need to kill the process
+      if(p->handlers[i] == (void*) SIG_DFL || p->handlers[i] == (void*) SIGKILL){
         goto sigkillhandler;
       }
       if(p->handlers[i] == (void*) SIGSTOP){//The handler of the current signal is STOP so we need to STOP the signal 
         goto sigstophandler;
       }
-      if(p->handler[i] == (void*) SIGCONT){// THe handler of the current signal is CONT so we need to do cont process
+      if(p->handlers[i] == (void*) SIGCONT){// THe handler of the current signal is CONT so we need to do cont process
         goto sigconthandler;
       }
-      //From here we handle the user space handler function
+
+      // Handeling user handlers
       p->mask_backup = p->mask;
       p->mask = p->sig_masks[i];
-      tp = p->tp;     // passing a pointer to the process trapframe
-      tf->esp -= sizeof(struct trapframe); //Save space to the trapframe 
+      tp = p->tf;     // passing a pointer to the process trapframe
+      tp->esp -= sizeof(struct trapframe); //Save space to the trapframe
       memmove((void*) (tp->esp), tp, sizeof(struct trapframe)); 
-      p->tf_backup = (void*) (tp->esp);
+      p->tf_backup = (void*) (tp->esp); // ??? why void%
 
       //COPY FROM HAVIA active the signl handler in the user space with "injection" return to sigret function after finishing
 
       tp->esp -= ( &endsigret -  &startsigret); //Save a space at the stack to the sigret function
-      memmove((void*)tp->esp,startsigret,( &endsigret - &startsigret)) //By use the memmove function we can move the esp to the strat of the sigret function
+      memmove((void*)tp->esp,startsigret,( &endsigret - &startsigret)); //By use the memmove function we can move the esp to the strat of the sigret function
       tp->esp -= 4; // Save place to the argument (signum)
       *((int *)(tp->esp)) = i; // pusing the argument (signum) to the steack
       tp->esp -= 4; // Save place to the reteun address
-      *((int *)(tp->eip)) = p->handler[i]; // move the eip to handler[i] function to run the handler
+      *((int *)(tp->eip)) = p->handlers[i]; // move the eip to handler[i] function to run the handler
       return; // way return ? we dont need to countine the next signal to check ?    
-  } 
+    } 
   }
 }
