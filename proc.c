@@ -18,6 +18,11 @@ int nextpid = 1;
 extern void forkret(void);
 extern void trapret(void);
 
+//***Task 2.4*** declarate the sigret_start and end function
+extern void startsigret(void);
+extern void endsigret(void);
+//
+
 static void wakeup1(void *chan);
 
 void
@@ -64,28 +69,114 @@ myproc(void) {
   popcli();
   return p;
 }
+/*
+Before attempting to acquire a lock, acquire calls pushcli to disable
+interrupts. Release call popcli to allow them to be enable.(The underlying)
+x86 instruction to disable interrupts is named cli). pushcli and popcli 
+are more then just wrappers around  cli and sti: thay are counted, so that it 
+takes two calls to popcli to undo two calls to pushcli: this way if code
+ acquires two different locks, interrupts will not be reenable until both
+ locks have been released.
+
+*/
 
 
-
-
+// Pushcli/popcli are like cli/sti except that they are matched:
+// it takes two popcli to undo two pushcli.  Also, if interrupts
+// are off, then pushcli, popcli leaves them off.
 int 
 allocpid(void) 
+{
+  int pid;
+  pushcli(); // disable interrupts to avoid deadlock
+  do{
+    pid = nextpid;
+  }while(!cas(&nextpid,pid,pid+1));
+  popcli();
+  return pid;
+  //I think it's should be return pid+1 like the exmpele
+}
+  /*old allocpid
 {
   int pid;
   acquire(&ptable.lock);
   pid = nextpid++;
   release(&ptable.lock);
   return pid;
+
+}*/
+
+
+
+//***Task 3.2***
+/*
+static struct proc*
+allocproc(void)
+{
+
+  struct proc *p;
+  char *sp;
+  int i;
+
+  pushcli();    // acquire the intterputs 
+  do{
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->state == UNUSED){
+        goto found;
+      }
+    }
+      popcli()  //relese the intterupt before return (not new pid found)
+      return 0;
+    found:
+  }while(!(cas(&p->state, UNUSED, EMBRYO)));  // The 'cas' loop countine until the p->state is EMBRYO
+  popcli();   //Relese the intrrupts after the loop is break
+  
+  p->pid = allocpid();
+
+  // Allocate kernel stack.
+  if((p->kstack = kalloc()) == 0){
+    p->state = UNUSED;
+    return 0;
+  }
+  sp = p->kstack + KSTACKSIZE;
+
+  // Leave room for trap frame.
+  sp -= sizeof *p->tf;
+  p->tf = (struct trapframe*)sp;
+
+  // Set up new context to start executing at forkret,
+  // which returns to trapret.
+  sp -= 4;
+  *(uint*)sp = (uint)trapret;
+
+  sp -= sizeof *p->context;
+  p->context = (struct context*)sp;
+  memset(p->context, 0, sizeof *p->context);
+  p->context->eip = (uint)forkret;
+   */
+  ///***Task 2.1.2***
+/*
+  p->pend_sig = 0;      
+  p->mask = 0;
+  for (i = 0; i < 32; i++){
+    p->handlers[i] = (void *) SIG_DFL;
+    p->sig_masks[i] = 0;
+  }
+
+  return p;
 }
+*/
 
 //PAGEBREAK: 32
 // Look in the process table for an UNUSED proc.
 // If found, change state to EMBRYO and initialize
 // state required to run in the kernel.
 // Otherwise return 0.
+
 static struct proc*
 allocproc(void)
 {
+
   struct proc *p;
   char *sp;
   int i;
@@ -137,8 +228,6 @@ found:
 
   return p;
 }
-
-
 
 
 //PAGEBREAK: 32
@@ -521,10 +610,13 @@ int
 kill(int pid, int signum)
 {
 struct proc *p;
-
+//$$$
+//cprintf("Get into kill with pid %d and signum %d\n",pid,signum);
 acquire(&ptable.lock);
 for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
   if(p->pid == pid){
+    //$$$
+   // cprintf("Found a process inside the kill the pid is %d\n",pid);
     if(p->state != ZOMBIE && p->state != UNUSED && p->killed != 1){
       if(signum >= 0 && signum <= 31){
         p->pend_sig = p->pend_sig | (1<<signum);
@@ -598,7 +690,8 @@ uint
 sigprocmask(uint sigmask){
   uint old_mask;
   struct proc *curproc = myproc();
-
+  //$$$
+  //cprintf("the new mask is %d\n",sigmask);
   old_mask = curproc->mask;
   curproc->mask = sigmask; //updating the process signal mask
   return old_mask;
@@ -645,7 +738,7 @@ void
 signalChecker(void){
   struct proc *p = myproc();
   int pendingSignalCheckerBit,maskCheckerBit,i ;
-  struct sigaction* currentSigaction;
+ // struct sigaction* currentSigaction; //*** we dont use the sigaction
   struct trapframe* tp;
   if(!p){  //process is not NULL
     return;
@@ -712,12 +805,12 @@ signalChecker(void){
 
       //COPY FROM HAVIA active the signl handler in the user space with "injection" return to sigret function after finishing
 
-      tp->esp -= ( &endsigret -  &startsigret); //Save a space at the stack to the sigret function
-      memmove((void*)tp->esp,startsigret,( &endsigret - &startsigret)); //By use the memmove function we can move the esp to the strat of the sigret function
+      tp->esp -= &endsigret - &startsigret; //Save a space at the stack to the sigret function
+      memmove((void*)tp->esp,startsigret,&endsigret - &startsigret); //By use the memmove function we can move the esp to the strat of the sigret function
       tp->esp -= 4; // Save place to the argument (signum)
       *((int *)(tp->esp)) = i; // pusing the argument (signum) to the steack
       tp->esp -= 4; // Save place to the reteun address
-      *((int *)(tp->eip)) = p->handlers[i]; // move the eip to handler[i] function to run the handler
+      *((int *)(tp->eip)) = (int)p->handlers[i]; // move the eip to handler[i] function to run the handler
       return; // way return ? we dont need to countine the next signal to check ?    
     } 
   }

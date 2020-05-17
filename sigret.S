@@ -1,8 +1,8 @@
 #include "traps.h"
 #include "syscall.h"
 
-.global startsigret
-.global endsigret
+.globl startsigret
+.globl endsigret
 
 startsigret:
 	movl $SYS_sigret, %eax
