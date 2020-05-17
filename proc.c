@@ -643,7 +643,7 @@ signalChecker(void){
   if(!p){  //process is not NULL
     return;
   }
-//************We need to acquire the ptable????????
+//************We need to acquire the ptable????????    
   for (i = 0; i < 32; i++){
     pendingSignalCheckerBit = p->pend_sig & (1<<i); //Check if the bit in the i place at the pend_sig is 1
     maskCheckerBit = p->mask & (1<<i);   // Check if the bit in the i place at the mask is 1
@@ -658,7 +658,7 @@ signalChecker(void){
       if(i == SIGSTOP){// SIGSTOP Handling, will loop until thje 
         sigstophandler:
         p->stoped = 1;
-        while((p->pend_sig & (1<<SIGCONT)) > 0){
+        while((p->pend_sig & (1<<SIGCONT)) == 0){  
           yield();
         }
         continue;
@@ -674,7 +674,7 @@ signalChecker(void){
       }
       //We can merge all the next ifs to the prev ifs only change the condition of every if.
       // for our choice.
-      if(p->handlers[i] == (void*) SIG_DFL){//The handler of the current siganal is DFL so we need to kill the process
+      if(p->handlers[i] == (void*) SIG_DFL || p->handlers[i] == (void*) SIG_KILL){//The handler of the current siganal is DFL so we need to kill the process
         goto sigkillhandler;
       }
       if(p->handlers[i] == (void*) SIGSTOP){//The handler of the current signal is STOP so we need to STOP the signal 
@@ -687,7 +687,7 @@ signalChecker(void){
       p->mask_backup = p->mask;
       p->mask = p->sig_masks[i];
       tp = p->tp;     // passing a pointer to the process trapframe
-      tf->esp -= sizeof(struct trapframe); //Save space to the trapframe
+      tf->esp -= sizeof(struct trapframe); //Save space to the trapframe 
       memmove((void*) (tp->esp), tp, sizeof(struct trapframe)); 
       p->tf_backup = (void*) (tp->esp);
 
