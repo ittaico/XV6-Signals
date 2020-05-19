@@ -162,6 +162,7 @@ allocproc(void)
   p->context->eip = (uint)forkret;
   
   ///***Task 2.1.2***
+  //TODO: check that everything was initiated.
   p->pend_sig = 0;      
   p->mask = 0;
   for (i = 0; i < 32; i++){
@@ -262,14 +263,13 @@ userinit(void)
   p->cwd = namei("/");
 
   // this assignment to p->state lets other cores
-  // run this process. the acquire forces the above
-  // writes to be visible, and the lock is also needed
-  // because the assignment might not be atomic.
-  acquire(&ptable.lock);
+  // run this process. 
 
-  p->state = RUNNABLE;
-
-  release(&ptable.lock);
+  //*** 4 ***
+  // cas is atomic and with push\popcli replaces the usage of the lock.
+  pushcli();
+  if(!cas(&p->state,EMBRYO,RUNNABLE)){}
+  popcli();
 }
 
 // Grow current process's memory by n bytes.
@@ -331,19 +331,18 @@ fork(void)
 
   pid = np->pid;
 
-  ///***Task 2.1.2***
+  //***Task 2.1.2***
+  //TODO: check that everything was initiated.
   np->mask = curproc->mask;
   for (i = 0; i<32; i++){
     np->handlers[i] = curproc->handlers[i];
     np->sig_masks[i] = curproc->sig_masks[i];
   } 
 
-
-  acquire(&ptable.lock);
-
-  np->state = RUNNABLE;
-
-  release(&ptable.lock);
+  //*** Task 4 ***
+  pushcli();
+  if(!cas(np->state,EMBRYO,RUNNABLE)){}
+  popcli();
 
   return pid;
 }
@@ -374,8 +373,8 @@ exit(void)
   end_op();
   curproc->cwd = 0;
 
-  acquire(&ptable.lock);
-
+  pushcli();
+  if(!cas(&curproc->state, RUNNING, -ZOMBIE))
   // Parent might be sleeping in wait().
   wakeup1(curproc->parent);
 
@@ -389,7 +388,6 @@ exit(void)
   }
 
   // Jump into the scheduler, never to return.
-  curproc->state = ZOMBIE;
   sched();
   panic("zombie exit");
 }
@@ -461,35 +459,33 @@ scheduler(void)
     //acquire(&ptable.lock);
     //***task 4***
     pushcli();
-    do{
-      for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-        if(p->state == RUNNABLE){
-          break; //For the 'for' loop
-        }
+    
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(!cas(&p->state, RUNNABLE, -RUNNING)){
+        continue; 
       }
-      if(p == &ptable.proc[NPROC]){
-        break;  // For the 'do-while' loop
-      }  
-    }while(!(cas(&p->state,RUNNABLE,-RUNNING)));
 
-
-    if(p != &ptable.proc[NPROC]){ // process state is -RUNNING
     // Switch to chosen process.
     c->proc = p;
     switchuvm(p);
-    do{
-      for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-        if(p->state == -RUNNING){
-          break; //For the 'for' loop
-        }
-      }
-      if(p == &ptable.proc[NPROC]){
-        break;  // For the 'do-while' loop
-      }  
-    }while(!(cas(&p->state,-RUNNING,RUNNING)));
-   // p->state = RUNNING;
+    if(!cas(&p->state, -RUNNING, RUNNING)){
+
+    }
+    // p->state = RUNNING;
     swtch(&(c->scheduler), p->context);
     switchkvm();
+
+    if(!cas(&p->state, -ZOMBIE, ZOMBIE)){}
+
+    if(!cas(&p->state, -SLEEPING, SLEEPING)){
+      if(p->killed){
+        cas(&p->state, SLEEPING, -RUNNABLE)
+      }
+    }
+
+    if(!cas(&p->state, -RUNNABLE, RUNNABLE)){}
+
+
 
     // Process is done running for now.
     // It should have changed its p->state before coming back.
