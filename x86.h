@@ -145,6 +145,43 @@ lcr3(uint val)
 }
 
 //task 3.1.1
+//The function will reuten 1 if the cmpxchg will success to 
+//set the (addr) to the newval, else return 0
+/*
+static inline int cas(volatile void *addr, int expected, int newval) {
+    int result = 1;
+    asm volatile(
+            "lock;\n"
+            "cmpxchg %2 ,(%3)\n"
+            "jz .equal\n"
+            "mov $0, %0\n"
+            ".equal: \n"
+    : "=m"(result)
+    : "a"(expected), "b"(newval), "c"(addr)
+    : "memory"
+    );
+
+    return result;
+}
+*/
+/*
+static inline int cas(volatile void * addr, int expected, int newval) {
+  
+  int res = 1;
+  asm volatile(
+      "lock\n\t"
+      "cmpxchg %3,(%2);\n\t"
+      "jz .label1;\n\t" 
+      "mov $0x0,%0\n\t"
+      ".label1:"
+    :"=m"(res)
+    :"a"(expected), "b"(addr), "c"(newval)
+    :"memory", "cc"
+    );
+
+    return res;
+  }
+*/
 static inline int cas(volatile void * addr, int expected, int newval) {
   unsigned int ret = 0;
   

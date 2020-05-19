@@ -93,7 +93,7 @@ allocpid(void)
     pid = nextpid;
   }while(!cas(&nextpid,pid,pid+1));
   popcli();
-  return pid;
+  return pid+1;
   //I think it's should be return pid+1 like the exmpele
 }
   /*old allocpid
@@ -117,19 +117,27 @@ allocproc(void)
   char *sp;
   int i;
 
-  pushcli();    // acquire the intterputs 
+  pushcli();  // disable intterputs 
+
+  // find a process in state  UNUSED and perform CAS to update its state to EMBRYO
   do{
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state == UNUSED){
-        goto found;
+        break;
       }
     }
-      popcli()  //relese the intterupt before return (not new pid found)
+
+    // if we didn't found an UNUSED process - enable interupts and return
+    if(p == &ptable.proc[NPROC]){
+      popcli();  
       return 0;
-    found:
-  }while(!(cas(&p->state, UNUSED, EMBRYO)));  // The 'cas' loop countine until the p->state is EMBRYO
-  popcli();   //Relese the intrrupts after the loop is break
-  
+    }
+
+  // CAS will succeed only of the state of the process was sucessfuly updated to EMRYO 
+  }while(!(cas(&p->state, UNUSED, EMBRYO)));  
+
+  // enable intterupts and allocation the process id. 
+  popcli();   
   p->pid = allocpid();
 
   // Allocate kernel stack.
@@ -152,8 +160,8 @@ allocproc(void)
   p->context = (struct context*)sp;
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
+  
   ///***Task 2.1.2***
-
   p->pend_sig = 0;      
   p->mask = 0;
   for (i = 0; i < 32; i++){
@@ -450,29 +458,48 @@ scheduler(void)
     sti();
 
     // Loop over process table looking for process to run.
-    acquire(&ptable.lock);
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
-        continue;
+    //acquire(&ptable.lock);
+    //***task 4***
+    pushcli();
+    do{
+      for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+        if(p->state == RUNNABLE){
+          break; //For the 'for' loop
+        }
+      }
+      if(p == &ptable.proc[NPROC]){
+        break;  // For the 'do-while' loop
+      }  
+    }while(!(cas(&p->state,RUNNABLE,-RUNNING)));
 
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
 
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
+    if(p != &ptable.proc[NPROC]){ // process state is -RUNNING
+    // Switch to chosen process.
+    c->proc = p;
+    switchuvm(p);
+    do{
+      for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+        if(p->state == -RUNNING){
+          break; //For the 'for' loop
+        }
+      }
+      if(p == &ptable.proc[NPROC]){
+        break;  // For the 'do-while' loop
+      }  
+    }while(!(cas(&p->state,-RUNNING,RUNNING)));
+   // p->state = RUNNING;
+    swtch(&(c->scheduler), p->context);
+    switchkvm();
 
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      c->proc = 0;
-    }
-    release(&ptable.lock);
-
+    // Process is done running for now.
+    // It should have changed its p->state before coming back.
+    c->proc = 0;
+    }  
+  popcli(); //DODOC
+  //release(&ptable.lock);
   }
 }
+
 
 // Enter scheduler.  Must hold only ptable.lock
 // and have changed proc->state. Saves and restores
