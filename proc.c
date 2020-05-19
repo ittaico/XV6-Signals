@@ -109,7 +109,6 @@ allocpid(void)
 
 
 //***Task 3.2***
-/*
 static struct proc*
 allocproc(void)
 {
@@ -153,9 +152,8 @@ allocproc(void)
   p->context = (struct context*)sp;
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
-   */
   ///***Task 2.1.2***
-/*
+
   p->pend_sig = 0;      
   p->mask = 0;
   for (i = 0; i < 32; i++){
@@ -165,8 +163,8 @@ allocproc(void)
 
   return p;
 }
-*/
 
+/*
 //PAGEBREAK: 32
 // Look in the process table for an UNUSED proc.
 // If found, change state to EMBRYO and initialize
@@ -217,8 +215,6 @@ found:
   p->context = (struct context*)sp;
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
-
-  ///***Task 2.1.2***
   p->pend_sig = 0;      
   p->mask = 0;
   for (i = 0; i < 32; i++){
@@ -228,7 +224,7 @@ found:
 
   return p;
 }
-
+*/
 
 //PAGEBREAK: 32
 // Set up first user process.
