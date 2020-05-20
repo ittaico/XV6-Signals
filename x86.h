@@ -164,24 +164,24 @@ static inline int cas(volatile void *addr, int expected, int newval) {
     return result;
 }
 */
-/*
+
 static inline int cas(volatile void * addr, int expected, int newval) {
-  
   int res = 1;
   asm volatile(
-      "lock\n\t"
-      "cmpxchg %3,(%2);\n\t"
-      "jz .label1;\n\t" 
-      "mov $0x0,%0\n\t"
-      ".label1:"
+    "lock\n\t"
+    "cmpxchg %3,(%2)\n\t"
+    "pushfl\n\t"
+    "popl %0\n\t"
+    "and $0x040,%0\n\t"
     :"=m"(res)
-    :"a"(expected), "b"(addr), "c"(newval)
+    :"a"(expected), "r"(addr), "r"(newval)
     :"memory", "cc"
     );
 
     return res;
   }
-*/
+
+/*
 static inline int cas(volatile void * addr, int expected, int newval) {
   unsigned int ret = 0;
   
@@ -198,7 +198,7 @@ static inline int cas(volatile void * addr, int expected, int newval) {
   : "=a"(ret));
   return ret;
 }
-
+*/
 //PAGEBREAK: 36
 // Layout of the trap frame built on the stack by the
 // hardware and by trapasm.S, and passed to trap().

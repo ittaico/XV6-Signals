@@ -341,7 +341,7 @@ fork(void)
 
   //*** Task 4 ***
   pushcli();
-  if(!cas(np->state,EMBRYO,RUNNABLE)){}
+  if(!cas(&np->state,EMBRYO,RUNNABLE)){}
   popcli();
 
   return pid;
@@ -374,7 +374,7 @@ exit(void)
   curproc->cwd = 0;
 
   pushcli();
-  if(!cas(&curproc->state, RUNNING, -ZOMBIE)){
+  if(!cas(&curproc->state, RUNNING, _ZOMBIE)){
 
   }
   // Parent might be sleeping in wait().
@@ -405,10 +405,10 @@ wait(void)
   
   //acquire(&ptable.lock);
   // disable intterupts 
-  pushcli()
+  pushcli();
   for(;;){
     // Parent should be sleeping while checking the children
-    if(!(cas(&curproc->state,RUNNING.-SLEEPING))){
+    if(!(cas(&curproc->state,RUNNING,_SLEEPING))){
 
     }
 
@@ -436,7 +436,7 @@ wait(void)
         }
 
         // parent can resume its run
-        if(!(cas(&curproc->state,-SLEEPING,RUNNING))){
+        if(!(cas(&curproc->state,_SLEEPING,RUNNING))){
 
         }
     //    release(&ptable.lock);
@@ -450,7 +450,7 @@ wait(void)
       //release(&ptable.lock);
 
       // parent can resume its run
-      if(!(cas(&proc->state,-SLEEPING,RUNNING))){
+      if(!(cas(&curproc->state,_SLEEPING,RUNNING))){
 
       }
       popcli();
@@ -460,6 +460,7 @@ wait(void)
     // originaly there was a call for sleep(). 
     // pass control to the scheduler like in yield.
     sched();
+
   }
 }
 
@@ -488,31 +489,31 @@ scheduler(void)
     pushcli();
     
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(!cas(&p->state, RUNNABLE, -RUNNING)){
+      if(!cas(&p->state, RUNNABLE,_RUNNING)){
         continue; 
       }
 
     // Switch to chosen process.
     c->proc = p;
     switchuvm(p);
-    if(!cas(&p->state, -RUNNING, RUNNING)){
+    if(!cas(&p->state,_RUNNING,RUNNING)){
 
     }
     // p->state = RUNNING;
     swtch(&(c->scheduler), p->context);
     switchkvm();
 
-    if(!cas(&p->state, -ZOMBIE, ZOMBIE)){
+    if(!cas(&p->state,_ZOMBIE,ZOMBIE)){
       wakeup1(p->parent);
     }
 
-    if(!cas(&p->state, -SLEEPING, SLEEPING)){
+    if(!cas(&p->state,_SLEEPING,SLEEPING)){
       if(p->killed){
-        cas(&p->state, SLEEPING, -RUNNABLE)
+        cas(&p->state,SLEEPING,_RUNNABLE);
       }
     }
 
-    if(!cas(&p->state, -RUNNABLE, RUNNABLE)){}
+    if(!cas(&p->state,_RUNNABLE, RUNNABLE)){}
 
 
 
@@ -562,7 +563,7 @@ yield(void)
   //myproc()->state = RUNNABLE;
 
   //stop the process from running
-  if(!(cas(&p->state,RUNNING,-RUNNABLE))){
+  if(!(cas(&p->state,RUNNING,_RUNNABLE))){
 
   }
   sched();
@@ -624,7 +625,7 @@ sleep(void *chan, struct spinlock *lk)
   // Go to sleep.
   p->chan = chan;
   //p->state = SLEEPING;
-  if(!(cas(p->state,RUNNING,-SLEEPING))){
+  if(!(cas(&p->state,RUNNING,_SLEEPING))){
 
   }
   sched();
@@ -652,15 +653,15 @@ wakeup1(void *chan)
   struct proc *p;
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if((p->state == SLEEPING || p->state == -SLEEPING) && p->chan == chan){
+    if((p->state == SLEEPING || p->state == _SLEEPING) && p->chan == chan){
 
       // start the wakeup process. There should be no interference.
-      if(!(cas(&p->state,SLEEPING,-RUNNABLE))){
+      if(!(cas(&p->state,SLEEPING,_RUNNABLE))){
 
       }
       // the process is waken up: its chan should be cleared and state should be changed
       p->chan = 0;
-      if(!(cas(&p->state, -RUNNABLE, RUNNABLE))){
+      if(!(cas(&p->state,_RUNNABLE,RUNNABLE))){
         
       }
       
@@ -693,21 +694,24 @@ int
 kill(int pid, int signum)
 {
 struct proc *p;
-//$$$
-//cprintf("Get into kill with pid %d and signum %d\n",pid,signum);
-acquire(&ptable.lock);
+//acquire(&ptable.lock);
+pushcli(); // disable intterupts
+
+// find the process with pid, ensure it is not a zomibe and that it wasn't killed
+// update the pendidng signals.
+// Maybe we need a buisy-wait?
 for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
   if(p->pid == pid){
-    //$$$
-   // cprintf("Found a process inside the kill the pid is %d\n",pid);
-    if(p->state != ZOMBIE && p->state != UNUSED && p->killed != 1){
+    if(p->state != ZOMBIE && p->state != _ZOMBIE && p->state != UNUSED && p->killed != 1){
       if(signum >= 0 && signum <= 31){
         p->pend_sig = p->pend_sig | (1<<signum);
       }
+      popcli();
       return 0;
     }
   }
 }
+popcli();
 return -1;
 
 
@@ -744,7 +748,11 @@ procdump(void)
   [SLEEPING]  "sleep ",
   [RUNNABLE]  "runble",
   [RUNNING]   "run   ",
-  [ZOMBIE]    "zombie"
+  [ZOMBIE]    "zombie",
+  [_ZOMBIE]   "_zombie",
+  [_RUNNING]  "_running",
+  [_RUNNABLE] "_runble",
+  [_SLEEPING] "_sleeping"
   };
   int i;
   struct proc *p;
@@ -769,42 +777,41 @@ procdump(void)
 }
 
 //***2.1.3***
+// updating the signal mask of the process with the given sigmask
 uint 
 sigprocmask(uint sigmask){
   uint old_mask;
   struct proc *curproc = myproc();
-  //$$$
-  //cprintf("the new mask is %d\n",sigmask);
   old_mask = curproc->mask;
-  curproc->mask = sigmask; //updating the process signal mask
+  curproc->mask = sigmask; 
   return old_mask;
 
 }
 
-// TODO/
+//***2.1.4***
+// registering a custom handler for a specific signal
 int 
 sigaction(int signum,const struct sigaction *act,struct sigaction *oldact){
   struct proc *curproc = myproc();
-  //chack for the validity, the signum should be between 0-31 and the act can't be NULL
-  if(signum < 0 || signum > 31 || act == NULL || act->sigmask < 0 || oldact == NULL){
+
+  //check validity of inputs, the signum should be between 0-31 and the act can't be NULL
+  if(signum < 0 || signum > 31 || act == NULL || act->sigmask < 0){
     return -1;
   }
-  //Check if the new handler is one of the fowlling:SIG_IGN,SIGSTOP,SIGKILL,SIGCONT,SIG_DFL 
-  //or a pointer to a user space signal handler
- // if(act->sa_handler == SIG_IGN || act->sa_handler == SIGSTOP || act->sa_handler == SIGKILL ||act->sa_handler == SIGCONT ||act->sa_handler == SIG_DFL)
-  //Chack is the struct oldact isn't NULL, if not will get the current sigaction
-    oldact->sa_handler = curproc->handlers[signum]; //need to check the defanition of the sa_handler on the struct
-    oldact->sigmask = curproc->sig_masks[signum];   //Copy the sig_masks[signum] of the old handler the oldact
-    curproc->handlers[signum] = act->sa_handler;
-    curproc->sig_masks[signum] = act->sigmask;
-
-
-
+    
+  // return the old signal handler (sigaction sturct) if oldact is not null
+  if(oldact != NULL){
+    oldact->sa_handler = curproc->handlers[signum];
+    oldact->sigmask = curproc->sig_masks[signum]; 
+  }
+ 
+  // register the new signal handler for the given signal  
+  curproc->handlers[signum] = act->sa_handler;
+  curproc->sig_masks[signum] = act->sigmask;
   return 0;
 }
 
 //Return to the user space by restoring the trap frame backup we saved before running the user signal handler.
-// ??? Do we need to set a flag to know when we are going to user mode ???
 void
 sigret(void){
   struct proc *curproc = myproc();
@@ -821,15 +828,14 @@ void
 signalChecker(void){
   struct proc *p = myproc();
   int pendingSignalCheckerBit,maskCheckerBit,i ;
- // struct sigaction* currentSigaction; //*** we dont use the sigaction
   struct trapframe* tp;
   if(!p){  //process is not NULL
     return;
   }
+
   /*
   checking for the process's 32 possible pending signals and handaling them.
   signal numbers are located in proc.h
-  ??? Do we need to acquire the ptable ???
   */
   for (i = 0; i < 32; i++){
     pendingSignalCheckerBit = p->pend_sig & (1<<i); //Check if the bit in position i of pend_sig is 1
@@ -840,8 +846,16 @@ signalChecker(void){
       if(i == SIGKILL){ // SIGKILL Handling
         sigkillhandler:
         p->killed = 1;
-        if(p->state == SLEEPING)
-          p->state = RUNNABLE;
+        if(p->state == SLEEPING){
+           pushcli();
+           //p->state = RUNNABLE;
+           if(!(cas(&p->state,SLEEPING,RUNNABLE))){
+
+           }
+           popcli();
+        }
+
+        p->pend_sig ^= (1 << i); // Set the bit of the signal back to zero
         continue;
       }
 
@@ -852,6 +866,7 @@ signalChecker(void){
         while((p->pend_sig & (1<<SIGCONT)) == 0){
           yield();
         }
+        p->pend_sig ^= (1 << i); // Set the bit of the signal back to zero
         continue;
       }
 
@@ -859,10 +874,12 @@ signalChecker(void){
         sigconthandler:
         if(p->stopped == 1)
           p->stopped = 0;
+        p->pend_sig ^= (1 << i); // Set the bit of the signal back to zero
         continue;
       }
 
       if(p->handlers[i] == (void*) SIG_IGN){//The handler of the current signal is IGN so we need to IGN the current signal
+        p->pend_sig ^= (1 << i); // Set the bit of the signal back to zero
         continue;
       }
       //We can merge all the next ifs to the prev ifs only change the condition of every if.
@@ -894,6 +911,7 @@ signalChecker(void){
       *((int *)(tp->esp)) = i; // pusing the argument (signum) to the steack
       tp->esp -= 4; // Save place to the reteun address
       *((int *)(tp->eip)) = (int)p->handlers[i]; // move the eip to handler[i] function to run the handler
+      p->pend_sig ^= (1 << i); // Set the bit of the signal back to zero
       return; // way return ? we dont need to countine the next signal to check ?    
     } 
   }
