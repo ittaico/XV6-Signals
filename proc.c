@@ -440,12 +440,13 @@ scheduler(void)
 
     // Loop over process table looking for process to run.
     //acquire(&ptable.lock);
+    //log: cprintf("before the loop that change the state from RUNNABLE to _RUNNING in the scheduler\n\n");
+
     //***task 4***
     pushcli();
-    //cprintf("before the loop that change the state from RUNNABLE to _RUNNING in the scheduler\n\n");
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(!(cas(&p->state, RUNNABLE,_RUNNING))){
-        // cprintf("faild change the state from RUNNABLE to _RUNNING at the scheduler\n\n");
+        // log: cprintf("faild change the state from RUNNABLE to _RUNNING at the scheduler\n\n");
         continue; 
       }
 
@@ -469,15 +470,16 @@ scheduler(void)
       }
     }
 
-    if(!cas(&p->state,_RUNNABLE, RUNNABLE)){}
+    if(!cas(&p->state,_RUNNABLE, RUNNABLE)){
 
-
+    }
 
     // Process is done running for now.
     // It should have changed its p->state before coming back.
     c->proc = 0;
     }  
-  popcli(); //DODOC
+
+  popcli(); 
   //release(&ptable.lock);
   }
 }
@@ -617,10 +619,10 @@ wakeup1(void *chan)
       }
       // the process is waken up: its chan should be cleared and state should be changed
       p->chan = 0;
+
       if(!(cas(&p->state,_RUNNABLE,RUNNABLE))){
         
       }
-      
     }
   }
 }
@@ -795,7 +797,7 @@ signalChecker(void){
   */
   for (i = 0; i < 32; i++){
     pendingSignalCheckerBit = p->pend_sig & (1<<i); //Check if the bit in position i of pend_sig is 1
-    //Q: when do we need to set the mask from the sig_masks.
+    
     maskCheckerBit = p->mask & (1<<i);   // Check if the bit in the i place at the mask is 1 
 
     if (pendingSignalCheckerBit && (!maskCheckerBit ||  i == SIGKILL || i == SIGSTOP)){  //SIGSTOP and SIGKILL can not be blocked
@@ -838,8 +840,7 @@ signalChecker(void){
         p->pend_sig ^= (1 << i); // Set the bit of the signal back to zero
         continue;
       }
-      //We can merge all the next ifs to the prev ifs only change the condition of every if.
-      // for our choice.
+
       //The handler of the current siganal is DFL or KILL so we need to kill the process
       if(p->handlers[i] == (void*) SIG_DFL || p->handlers[i] == (void*) SIGKILL){
         goto sigkillhandler;
@@ -857,18 +858,16 @@ signalChecker(void){
       tp = p->tf;     // passing a pointer to the process trapframe
       tp->esp -= sizeof(struct trapframe); //Save space to the trapframe
       memmove((void*) (tp->esp), tp, sizeof(struct trapframe)); 
-      p->tf_backup = (void*) (tp->esp); // ??? why void%
-
-      //COPY FROM HAVIA active the signl handler in the user space with "injection" return to sigret function after finishing
+      p->tf_backup = (void*) (tp->esp); 
 
       tp->esp -= &endsigret - &startsigret; //Save a space at the stack to the sigret function
       memmove((void*)tp->esp,startsigret,&endsigret - &startsigret); //By use the memmove function we can move the esp to the strat of the sigret function
       tp->esp -= 4; // Save place to the argument (signum)
-      *((int *)(tp->esp)) = i; // pusing the argument (signum) to the steack
+      *((int *)(tp->esp)) = i; // pusing the argument (signum) to the stack
       tp->esp -= 4; // Save place to the reteun address
       *((int *)(tp->eip)) = (int)p->handlers[i]; // move the eip to handler[i] function to run the handler
       p->pend_sig ^= (1 << i); // Set the bit of the signal back to zero
-      return; // way return ? we dont need to countine the next signal to check ?    
+      return;   
     } 
   }
 }

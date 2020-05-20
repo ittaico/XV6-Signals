@@ -147,56 +147,24 @@ lcr3(uint val)
 //task 3.1.1
 //The function will reuten 1 if the cmpxchg will success to 
 //set the (addr) to the newval, else return 0
-/*
-static inline int cas(volatile void *addr, int expected, int newval) {
-    int result = 1;
-    asm volatile(
-            "lock;\n"
-            "cmpxchg %2 ,(%3)\n"
-            "jz .equal\n"
-            "mov $0, %0\n"
-            ".equal: \n"
-    : "=m"(result)
-    : "a"(expected), "b"(newval), "c"(addr)
-    : "memory"
-    );
 
-    return result;
-}
-*/
-/*
+
 static inline int cas(volatile void * addr, int expected, int newval) {
   int res = 1;
+
   asm volatile(
     "lock\n\t"
-    "cmpxchg %3,(%2)\n\t"
+    "cmpxchg %3,%1\n\t"
     "pushfl\n\t"
     "popl %0\n\t"
     "and $0x040,%0\n\t"
-    :"=m"(res)
-    :"a"(expected), "r"(addr), "r"(newval)
+    :"=r"(res), "+m"(*(int*)addr)
+    :"a"(expected), "r"(newval)
     :"memory", "cc"
     );
+
     return res;
   }
-*/
-
-static inline int cas(volatile void * addr, int expected, int newval) {
-  unsigned int ret = 0;
-  
-  asm volatile(
-          "lock; cmpxchg %2, %0;"  
-  : "=m"(*(int*)addr)
-  : "a"(expected), "r"(newval): "cc");
-
-  asm volatile(
-          "pushfl;"
-          "movl (%%esp), %%eax;"
-          "popfl;"
-          "andl $0x40, %0"
-  : "=a"(ret));
-  return ret;
-}
 
 //PAGEBREAK: 36
 // Layout of the trap frame built on the stack by the
