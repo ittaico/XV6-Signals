@@ -164,7 +164,7 @@ static inline int cas(volatile void *addr, int expected, int newval) {
     return result;
 }
 */
-
+/*
 static inline int cas(volatile void * addr, int expected, int newval) {
   int res = 1;
   asm volatile(
@@ -177,11 +177,10 @@ static inline int cas(volatile void * addr, int expected, int newval) {
     :"a"(expected), "r"(addr), "r"(newval)
     :"memory", "cc"
     );
-
     return res;
   }
+*/
 
-/*
 static inline int cas(volatile void * addr, int expected, int newval) {
   unsigned int ret = 0;
   
@@ -198,7 +197,7 @@ static inline int cas(volatile void * addr, int expected, int newval) {
   : "=a"(ret));
   return ret;
 }
-*/
+
 //PAGEBREAK: 36
 // Layout of the trap frame built on the stack by the
 // hardware and by trapasm.S, and passed to trap().

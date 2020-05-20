@@ -88,14 +88,16 @@ int
 allocpid(void) 
 {
   int pid;
-  pushcli(); // disable interrupts to avoid deadlock
+  pushcli(); //disable interrupts to avoid deadlock
+
   do{
     pid = nextpid;
   }while(!cas(&nextpid,pid,pid+1));
-  popcli();
-  return pid+1;
-  //I think it's should be return pid+1 like the exmpele
+
+  popcli(); //enable interupts
+  return pid; 
 }
+
   /*old allocpid
 {
   int pid;
@@ -106,7 +108,11 @@ allocpid(void)
 
 }*/
 
-
+//PAGEBREAK: 32
+// Look in the process table for an UNUSED proc.
+// If found, change state to EMBRYO and initialize
+// state required to run in the kernel.
+// otherwise return 0.
 
 //***Task 3.2***
 static struct proc*
@@ -133,7 +139,9 @@ allocproc(void)
       return 0;
     }
 
-  // CAS will succeed only of the state of the process was sucessfuly updated to EMRYO 
+  //log: cprintf("before chagne the state to EMBRYO from UNUSED at the allocproc\n\n");
+
+  // CAS will succeed only of the state of the process was sucessfuly updated to EMBRYO
   }while(!(cas(&p->state, UNUSED, EMBRYO)));  
 
   // enable intterupts and allocation the process id. 
@@ -161,8 +169,8 @@ allocproc(void)
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
   
-  ///***Task 2.1.2***
-  //TODO: check that everything was initiated.
+  //***Task 2.1.2***
+  // set the process signal handeling related fields.
   p->pend_sig = 0;      
   p->mask = 0;
   for (i = 0; i < 32; i++){
@@ -172,68 +180,6 @@ allocproc(void)
 
   return p;
 }
-
-/*
-//PAGEBREAK: 32
-// Look in the process table for an UNUSED proc.
-// If found, change state to EMBRYO and initialize
-// state required to run in the kernel.
-// Otherwise return 0.
-
-static struct proc*
-allocproc(void)
-{
-
-  struct proc *p;
-  char *sp;
-  int i;
-
-  acquire(&ptable.lock);
-
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == UNUSED)
-      goto found;
-
-  release(&ptable.lock);
-  return 0;
-
-found:
-  p->state = EMBRYO;
-  
-  release(&ptable.lock);
-
-  p->pid = allocpid();
-
-  // Allocate kernel stack.
-  if((p->kstack = kalloc()) == 0){
-    p->state = UNUSED;
-    return 0;
-  }
-  sp = p->kstack + KSTACKSIZE;
-
-  // Leave room for trap frame.
-  sp -= sizeof *p->tf;
-  p->tf = (struct trapframe*)sp;
-
-  // Set up new context to start executing at forkret,
-  // which returns to trapret.
-  sp -= 4;
-  *(uint*)sp = (uint)trapret;
-
-  sp -= sizeof *p->context;
-  p->context = (struct context*)sp;
-  memset(p->context, 0, sizeof *p->context);
-  p->context->eip = (uint)forkret;
-  p->pend_sig = 0;      
-  p->mask = 0;
-  for (i = 0; i < 32; i++){
-    p->handlers[i] = (void *) SIG_DFL;
-    p->sig_masks[i] = 0;
-  }
-
-  return p;
-}
-*/
 
 //PAGEBREAK: 32
 // Set up first user process.
@@ -265,10 +211,14 @@ userinit(void)
   // this assignment to p->state lets other cores
   // run this process. 
 
-  //*** 4 ***
+  // log: cprintf("before chagne the state to RUNNABLE from EMBRYO at the userinit\n\n");
+
+  //*** Task 4 ***
   // cas is atomic and with push\popcli replaces the usage of the lock.
   pushcli();
-  if(!cas(&p->state,EMBRYO,RUNNABLE)){}
+  if(!cas(&p->state,EMBRYO,RUNNABLE)){
+      // log: cprintf("state not changed to RUNABLE from EMBRYO in the userinit\n\n");
+  }
   popcli();
 }
 
@@ -332,16 +282,20 @@ fork(void)
   pid = np->pid;
 
   //***Task 2.1.2***
-  //TODO: check that everything was initiated.
+  // copy the mask and the signal handlers from the parent to the child
   np->mask = curproc->mask;
   for (i = 0; i<32; i++){
     np->handlers[i] = curproc->handlers[i];
     np->sig_masks[i] = curproc->sig_masks[i];
   } 
 
+  // log: cprintf("before chagne the state from EMBRYO to RUNNABLE in the fork\n\n");
+
   //*** Task 4 ***
   pushcli();
-  if(!cas(&np->state,EMBRYO,RUNNABLE)){}
+  if(!cas(&np->state,EMBRYO,RUNNABLE)){
+      // log: cprintf("faild change the state from EMBRYO TO RUNNABLE in the frok\n\n");
+  }
   popcli();
 
   return pid;
@@ -373,6 +327,8 @@ exit(void)
   end_op();
   curproc->cwd = 0;
 
+  //*** Task 4***
+  // change state to zombie
   pushcli();
   if(!cas(&curproc->state, RUNNING, _ZOMBIE)){
 
@@ -404,7 +360,6 @@ wait(void)
   struct proc *curproc = myproc();
   
   //acquire(&ptable.lock);
-  // disable intterupts 
   pushcli();
   for(;;){
     // Parent should be sleeping while checking the children
@@ -412,7 +367,6 @@ wait(void)
 
     }
 
-    // Scan through table looking for exited children.
     havekids = 0;
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->parent != curproc)
@@ -439,7 +393,7 @@ wait(void)
         if(!(cas(&curproc->state,_SLEEPING,RUNNING))){
 
         }
-    //    release(&ptable.lock);
+        //    release(&ptable.lock);
         popcli();
         return pid;
       }
@@ -447,15 +401,17 @@ wait(void)
 
     // No point waiting if we don't have any children.
     if(!havekids || curproc->killed){
-      //release(&ptable.lock);
 
       // parent can resume its run
       if(!(cas(&curproc->state,_SLEEPING,RUNNING))){
 
       }
+
+      //release(&ptable.lock);
       popcli();
       return -1;
     }
+    
     // we should do something here, not shure what.
     // originaly there was a call for sleep(). 
     // pass control to the scheduler like in yield.
@@ -478,7 +434,6 @@ scheduler(void)
   struct proc *p;
   struct cpu *c = mycpu();
   c->proc = 0;
-  
   for(;;){
     // Enable interrupts on this processor.
     sti();
@@ -487,9 +442,10 @@ scheduler(void)
     //acquire(&ptable.lock);
     //***task 4***
     pushcli();
-    
+    //cprintf("before the loop that change the state from RUNNABLE to _RUNNING in the scheduler\n\n");
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(!cas(&p->state, RUNNABLE,_RUNNING)){
+      if(!(cas(&p->state, RUNNABLE,_RUNNING))){
+        // cprintf("faild change the state from RUNNABLE to _RUNNING at the scheduler\n\n");
         continue; 
       }
 
@@ -503,11 +459,11 @@ scheduler(void)
     swtch(&(c->scheduler), p->context);
     switchkvm();
 
-    if(!cas(&p->state,_ZOMBIE,ZOMBIE)){
+    if(cas(&p->state,_ZOMBIE,ZOMBIE)){
       wakeup1(p->parent);
     }
 
-    if(!cas(&p->state,_SLEEPING,SLEEPING)){
+    if(cas(&p->state,_SLEEPING,SLEEPING)){
       if(p->killed){
         cas(&p->state,SLEEPING,_RUNNABLE);
       }
